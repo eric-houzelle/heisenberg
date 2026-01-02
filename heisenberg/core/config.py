@@ -29,11 +29,19 @@ class STTConfig:
     debug_dump: bool = True # Enable dumping audio to WAV for quality check
 
 @dataclass
+class VADConfig:
+    enabled: bool = True
+    threshold: float = 0.5
+    min_silence_duration_ms: int = 800
+    speech_pad_ms: int = 100
+
+@dataclass
 class Config:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
     wakeword: WakewordConfig = field(default_factory=WakewordConfig)
     stt: STTConfig = field(default_factory=STTConfig)
+    vad: VADConfig = field(default_factory=VADConfig)
     
     @classmethod
     def load(cls) -> "Config":

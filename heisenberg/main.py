@@ -24,10 +24,14 @@ async def main():
     router = EventRouter()
     fsm = FSM(router=router)
     
-    # Audio and Wakeword setup
+    # Audio, VAD and Engines setup
     audio_source = PyAudioIO(config.audio)
     wakeword_engine = OpenWakeWordEngine(config.wakeword)
     stt_engine = WhisperSTT(config.stt)
+    vad_engine = None
+    if config.vad.enabled:
+        from heisenberg.audio.vad import SileroVADEngine
+        vad_engine = SileroVADEngine(config.vad)
 
     # Register detection callback to FSM
     async def _on_wakeword_detected():
@@ -35,26 +39,31 @@ async def main():
         
     wakeword_engine.on_detected(_on_wakeword_detected)
 
-    # Register handlers for FSM events
+    # Voice Activity Detection State
+    was_speaking = False
     listening_task = None
 
     async def stop_listening_after_timeout(seconds: float):
         try:
             await asyncio.sleep(seconds)
             if fsm.state == State.LISTENING:
-                logger.info(f"Listening timeout reached ({seconds}s). Stopping STT stream.")
+                logger.info(f"Fail-safe timeout reached ({seconds}s). Force stopping STT.")
                 await stt_engine.stop_stream()
         except asyncio.CancelledError:
             pass
 
     async def on_wakeword():
-        nonlocal listening_task
+        nonlocal was_speaking, listening_task
         logger.info("Wakeword detected handler: Starting STT stream")
+        was_speaking = False
         await stt_engine.start_stream()
-        # Start a timeout task to stop listening
+        if vad_engine:
+            vad_engine.reset()
+        
+        # Fail-safe timeout (e.g., 10 seconds)
         if listening_task:
             listening_task.cancel()
-        listening_task = asyncio.create_task(stop_listening_after_timeout(5.0))
+        listening_task = asyncio.create_task(stop_listening_after_timeout(10.0))
 
     async def on_transcription_final(text: str):
         logger.info(f"Transcription final: {text}")
@@ -98,7 +107,6 @@ async def main():
         logger.info("Main loop started. Listening for wakeword...")
         
         # Central Audio Loop
-        
         while True:
             frame = await audio_source.read_frame()
             if frame:
@@ -106,9 +114,19 @@ async def main():
                 if fsm.state == State.IDLE:
                     await wakeword_engine.feed_audio(frame)
                 
-                # Feed STT if LISTENING
+                # Feed STT and VAD if LISTENING
                 if fsm.state == State.LISTENING:
                     await stt_engine.feed_audio(frame)
+                    
+                    if vad_engine:
+                        is_currently_speaking = vad_engine.is_speech(frame)
+                        
+                        # Detect transition from speaking to silent
+                        if was_speaking and not is_currently_speaking:
+                            logger.info("Silence detected. Stopping STT stream.")
+                            await stt_engine.stop_stream()
+                        
+                        was_speaking = is_currently_speaking
             else:
                 await asyncio.sleep(0.01)
     except Exception as e:
