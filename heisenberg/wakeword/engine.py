@@ -63,10 +63,6 @@ class OpenWakeWordEngine(ABCWakeword):
         logger.info("OpenWakeWordEngine stopped")
 
     async def _run(self) -> None:
-        import time
-        last_log_time = time.time()
-        max_score_seen = 0.0
-        
         try:
             while self.running:
                 frame = await self.audio_source.read_frame()
@@ -78,23 +74,14 @@ class OpenWakeWordEngine(ABCWakeword):
                 audio_data = np.frombuffer(frame, dtype=np.int16)
                 
                 # Predict
-                # NOTE: The model expects exactly 1280 samples for 80ms of audio
                 predictions = self.model.predict(audio_data)
                 
-                # Track and log max score periodically
+                # Check detections
                 for wakeword, score in predictions.items():
-                    max_score_seen = max(max_score_seen, score)
-                    
                     if score >= self.config.threshold:
                         logger.info(f"Wakeword detected: {wakeword} (score: {score:.2f})")
                         if self.callback:
                             await self.callback()
-                
-                if time.time() - last_log_time > 3:
-                     if max_score_seen > 0.0001:
-                         logger.debug(f"Max wakeword score in last 3s: {max_score_seen:.4f}")
-                     max_score_seen = 0.0
-                     last_log_time = time.time()
         except Exception as e:
             logger.error(f"Error in OpenWakeWordEngine loop: {e}", exc_info=True)
             self.running = False

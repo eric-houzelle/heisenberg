@@ -20,10 +20,17 @@ class WakewordConfig:
     inference_framework: str = "onnxrt" # or "tflite"
 
 @dataclass
+class STTConfig:
+    model_path: str = "models/ggml-tiny-q8_0.bin"
+    language: str = "fr"
+    n_threads: int = 4
+
+@dataclass
 class Config:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
     wakeword: WakewordConfig = field(default_factory=WakewordConfig)
+    stt: STTConfig = field(default_factory=STTConfig)
     
     @classmethod
     def load(cls) -> "Config":

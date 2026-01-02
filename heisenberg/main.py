@@ -11,7 +11,7 @@ from heisenberg.audio.capture import PyAudioIO
 from heisenberg.wakeword.engine import OpenWakeWordEngine
 
 async def main():
-    setup_logging(level="DEBUG")
+    setup_logging(level="INFO")
     logger = logging.getLogger("main")
     logger.info("Starting Heisenberg...")
 
