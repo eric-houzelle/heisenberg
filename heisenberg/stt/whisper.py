@@ -36,10 +36,11 @@ class WhisperSTT(ABCSTT):
             else:
                 try:
                     logger.info(f"Initializing WhisperSTT with model: {self.config.model_path}...")
-                    self._whisper = Whisper(
-                        model_path=self.config.model_path,
-                        language=self.config.language,
-                        n_threads=self.config.n_threads
+                    # The library requires using from_pretrained factory method
+                    self._whisper = Whisper.from_pretrained(
+                        self.config.model_path,
+                        # Some versions might take n_threads here, others in transcribe
+                        # We'll stick to the model path first as per the error message
                     )
                     logger.info("WhisperSTT successfully initialized.")
                 except Exception as e:
@@ -96,7 +97,11 @@ class WhisperSTT(ABCSTT):
                 
                 # Transcribe
                 logger.debug(f"Calling whispercpp.transcribe on {tmp_path}")
-                segments = self._whisper.transcribe(tmp_path)
+                segments = self._whisper.transcribe(
+                    tmp_path,
+                    language=self.config.language,
+                    n_threads=self.config.n_threads
+                )
                 logger.debug(f"Transcription complete. Got {len(segments)} segments.")
                 
                 # Combine segments
