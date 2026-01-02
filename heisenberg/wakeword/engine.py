@@ -75,7 +75,8 @@ class OpenWakeWordEngine(ABCWakeword):
                 
                 # Predict
                 predictions = self.model.predict(audio_data)
-                
+
+                logger.debug(f"Predictions: {predictions}")
                 # Debug: log all scores if there's any activity
                 if any(s > 0.05 for s in predictions.values()):
                     logger.debug(f"Predictions: {predictions}")
