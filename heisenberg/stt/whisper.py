@@ -82,6 +82,20 @@ class WhisperSTT(ABCSTT):
             full_text = " ".join([s.text for s in segments]).strip()
             logger.info(f"Full transcription: '{full_text}'")
             
+            # Optional: Dump audio to WAV for debugging
+            if self.config.debug_dump:
+                try:
+                    import uuid
+                    dump_path = f"debug_stt_{uuid.uuid4().hex[:8]}.wav"
+                    with wave.open(dump_path, 'wb') as wf:
+                        wf.setnchannels(1)
+                        wf.setsampwidth(2) # 16-bit
+                        wf.setframerate(16000)
+                        wf.writeframes(self._buffer)
+                    logger.info(f"Debug audio dumped to: {dump_path}")
+                except Exception as e:
+                    logger.error(f"Failed to dump debug audio: {e}")
+
             if self._final_callback:
                 await self._final_callback(full_text)
                     

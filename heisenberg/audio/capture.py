@@ -85,22 +85,16 @@ class PyAudioIO(ABCAudioIO):
             )
 
             if self.actual_rate != self.target_rate:
-                # Better resampling using scipy if available
+                # Use linear interpolation for resampling small chunks.
+                # Fourier-based resampling (scipy.signal.resample) creates artifacts at chunk boundaries.
                 audio_data_int16 = np.frombuffer(data, dtype=np.int16)
-                try:
-                    from scipy.signal import resample
-                    new_len = self.config.chunk_size
-                    resampled = resample(audio_data_int16, new_len).astype(np.int16)
-                    return resampled.tobytes()
-                except ImportError:
-                    # Fallback to numpy interpolation
-                    new_len = self.config.chunk_size
-                    resampled = np.interp(
-                        np.linspace(0, len(audio_data_int16), new_len, endpoint=False),
-                        np.arange(len(audio_data_int16)),
-                        audio_data_int16
-                    ).astype(np.int16)
-                    return resampled.tobytes()
+                new_len = self.config.chunk_size
+                resampled = np.interp(
+                    np.linspace(0, len(audio_data_int16), new_len, endpoint=False),
+                    np.arange(len(audio_data_int16)),
+                    audio_data_int16
+                ).astype(np.int16)
+                return resampled.tobytes()
             
             return data
         except Exception as e:

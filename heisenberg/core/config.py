@@ -24,6 +24,7 @@ class STTConfig:
     model_path: str = "tiny-q8_0"
     language: str = "fr"
     n_threads: int = 4
+    debug_dump: bool = True # Enable dumping audio to WAV for quality check
 
 @dataclass
 class Config:
