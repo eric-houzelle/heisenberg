@@ -30,18 +30,22 @@ async def main():
     stt_engine = WhisperSTT(config.stt)
 
     # Register detection callback to FSM
-    wakeword_engine.on_detected(
-        lambda: fsm.handle_event(Event.WAKEWORD_DETECTED)
-    )
+    async def _on_wakeword_detected():
+        await fsm.handle_event(Event.WAKEWORD_DETECTED)
+        
+    wakeword_engine.on_detected(_on_wakeword_detected)
 
     # Register handlers for FSM events
     listening_task = None
 
     async def stop_listening_after_timeout(seconds: float):
-        await asyncio.sleep(seconds)
-        if fsm.state == State.LISTENING:
-            logger.info(f"Listening timeout reached ({seconds}s). Stopping STT stream.")
-            await stt_engine.stop_stream()
+        try:
+            await asyncio.sleep(seconds)
+            if fsm.state == State.LISTENING:
+                logger.info(f"Listening timeout reached ({seconds}s). Stopping STT stream.")
+                await stt_engine.stop_stream()
+        except asyncio.CancelledError:
+            pass
 
     async def on_wakeword():
         nonlocal listening_task
@@ -54,10 +58,19 @@ async def main():
 
     async def on_transcription_final(text: str):
         logger.info(f"Transcription final: {text}")
-        await fsm.handle_event(Event.TRANSCRIPTION_FINAL)
-        # Transition back to IDLE after thinking (simulated for now)
-        await asyncio.sleep(1)
-        await fsm.transition(State.IDLE)
+        try:
+            # Trigger EVENT so FSM transitions to THINKING
+            await fsm.handle_event(Event.TRANSCRIPTION_FINAL)
+            
+            # Simulate "thinking" or processing time
+            await asyncio.sleep(0.5)
+            
+            # For now, back to IDLE manually since we don't have LLM/TTS events yet
+            await fsm.transition(State.IDLE)
+            logger.info("System returned to IDLE state. Ready for next command.")
+        except Exception as e:
+            logger.error(f"Error during post-transcription: {e}")
+            await fsm.transition(State.IDLE)
 
     router.register(Event.WAKEWORD_DETECTED, on_wakeword)
     stt_engine.on_final(on_transcription_final)
