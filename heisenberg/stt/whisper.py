@@ -84,12 +84,15 @@ class WhisperSTT(ABCSTT):
                     wf.writeframes(self._buffer)
                 
                 # Transcribe
+                logger.debug(f"Calling whispercpp.transcribe on {tmp_path}")
                 segments = self._whisper.transcribe(tmp_path)
+                logger.debug(f"Transcription complete. Got {len(segments)} segments.")
                 
                 # Combine segments
                 full_text = " ".join([s.text for s in segments]).strip()
+                logger.info(f"Full transcription: '{full_text}'")
                 
-                if full_text and self._final_callback:
+                if self._final_callback:
                     await self._final_callback(full_text)
                     
             finally:
