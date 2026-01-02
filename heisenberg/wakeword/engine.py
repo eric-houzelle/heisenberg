@@ -63,6 +63,10 @@ class OpenWakeWordEngine(ABCWakeword):
         logger.info("OpenWakeWordEngine stopped")
 
     async def _run(self) -> None:
+        import time
+        last_log_time = time.time()
+        max_score_seen = 0.0
+        
         try:
             while self.running:
                 frame = await self.audio_source.read_frame()
@@ -70,25 +74,30 @@ class OpenWakeWordEngine(ABCWakeword):
                     await asyncio.sleep(0.01)
                     continue
 
-                # Convert bytes to numpy array (assuming 16-bit PCM)
+                # Convert bytes to numpy array
                 audio_data = np.frombuffer(frame, dtype=np.int16).astype(np.float32) / 32768.0
                 
+                # Simple normalization to help with quiet mics
+                peak = np.max(np.abs(audio_data))
+                if peak > 0.01: # Don't normalize near-silence
+                    audio_data = audio_data / peak * 0.5 # target a 0.5 peak
+
                 # Predict
                 predictions = self.model.predict(audio_data)
-
-                logger.debug(f"Predictions: {predictions}")
-                # Debug: log all scores if there's any activity
-                if any(s > 0.05 for s in predictions.values()):
-                    logger.debug(f"Predictions: {predictions}")
-
-                # Check detections
+                
+                # Track and log max score periodically
                 for wakeword, score in predictions.items():
+                    max_score_seen = max(max_score_seen, score)
+                    
                     if score >= self.config.threshold:
                         logger.info(f"Wakeword detected: {wakeword} (score: {score:.2f})")
                         if self.callback:
                             await self.callback()
-                            # Optional: sleep or reset to avoid multiple detections for same event
-                            # self.model.reset() 
+                
+                if time.time() - last_log_time > 3:
+                     logger.debug(f"Max wakeword score in last 3s: {max_score_seen:.4f}")
+                     max_score_seen = 0.0
+                     last_log_time = time.time()
         except Exception as e:
             logger.error(f"Error in OpenWakeWordEngine loop: {e}", exc_info=True)
             self.running = False
