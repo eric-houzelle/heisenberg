@@ -76,7 +76,13 @@ class WhisperSTT(ABCSTT):
             
             # Transcription using pywhispercpp
             logger.debug("Calling pywhispercpp.model.transcribe")
-            segments = self._model.transcribe(audio_float32, language=self.config.language)
+            segments = self._model.transcribe(
+                audio_float32, 
+                language=self.config.language,
+                beam_size=self.config.beam_size,
+                best_of=self.config.best_of,
+                initial_prompt=self.config.initial_prompt
+            )
             
             # Combine segments
             full_text = " ".join([s.text for s in segments]).strip()

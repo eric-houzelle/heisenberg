@@ -24,6 +24,9 @@ class STTConfig:
     model_path: str = "tiny-q8_0"
     language: str = "fr"
     n_threads: int = 4
+    beam_size: int = 5
+    best_of: int = 5
+    initial_prompt: str = "Bonjour, je suis ton assistant Heisenberg."
     debug_dump: bool = True # Enable dumping audio to WAV for quality check
 
 @dataclass
