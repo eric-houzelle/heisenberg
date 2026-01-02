@@ -22,6 +22,11 @@ class PyAudioIO(ABCAudioIO):
         # Target for internal processing (usually 16000)
         self.target_rate = 16000 
         self.actual_rate = self.config.sample_rate
+        
+        # Async queue for buffered frames
+        self._queue: asyncio.Queue[bytes] = asyncio.Queue()
+        self._running = False
+        self._capture_thread: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
         if self.stream:
@@ -47,17 +52,73 @@ class PyAudioIO(ABCAudioIO):
             self.actual_rate = int(device_info['defaultSampleRate'])
             logger.warning(f"Target rate {self.target_rate}Hz unsupported. Falling back to device rate: {self.actual_rate}Hz")
             
+            # Use a larger buffer for the hardware stream when resampling
+            hw_chunk_size = int(self.config.chunk_size * (self.actual_rate / self.target_rate))
             self.stream = self.pa.open(
                 format=pyaudio.paInt16,
                 channels=self.config.channels,
                 rate=self.actual_rate,
                 input=True,
                 input_device_index=idx,
-                frames_per_buffer=int(self.config.chunk_size * (self.actual_rate / self.target_rate))
+                frames_per_buffer=hw_chunk_size * 2 # Double buffer to avoid overflows
             )
             logger.info(f"PyAudioIO started at fallback rate: {self.actual_rate}Hz")
 
+        self._running = True
+        self._capture_thread = asyncio.create_task(self._capture_loop())
+
+    async def _capture_loop(self):
+        """Continuously read from the stream and push to the queue."""
+        logger.debug("Audio capture loop started")
+        read_size = self.config.chunk_size
+        if self.actual_rate != self.target_rate:
+            read_size = int(self.config.chunk_size * (self.actual_rate / self.target_rate))
+
+        while self._running and self.stream:
+            try:
+                # Read blockingly in a thread pool to avoid blocking the event loop
+                data = await self._loop.run_in_executor(
+                    None, 
+                    self.stream.read, 
+                    read_size,
+                    False # exception_on_overflow=False
+                )
+                
+                if data:
+                    processed_data = self._process_frame(data)
+                    await self._queue.put(processed_data)
+                    
+            except Exception as e:
+                if self._running:
+                    logger.error(f"Error in audio capture loop: {e}")
+                await asyncio.sleep(0.1)
+        logger.debug("Audio capture loop stopped")
+
+    def _process_frame(self, data: bytes) -> bytes:
+        """Resample frame if needed."""
+        if self.actual_rate == self.target_rate:
+            return data
+            
+        # Linear interpolation resampling
+        audio_data_int16 = np.frombuffer(data, dtype=np.int16)
+        new_len = self.config.chunk_size
+        resampled = np.interp(
+            np.linspace(0, len(audio_data_int16), new_len, endpoint=False),
+            np.arange(len(audio_data_int16)),
+            audio_data_int16
+        ).astype(np.int16)
+        return resampled.tobytes()
+
     async def stop(self) -> None:
+        self._running = False
+        if self._capture_thread:
+            self._capture_thread.cancel()
+            try:
+                await self._capture_thread
+            except asyncio.CancelledError:
+                pass
+            self._capture_thread = None
+
         if self.stream:
             try:
                 self.stream.stop_stream()
@@ -68,37 +129,11 @@ class PyAudioIO(ABCAudioIO):
         logger.info("PyAudioIO stream stopped")
 
     async def read_frame(self) -> Optional[bytes]:
-        if not self.stream:
-            return None
-            
+        """Pop a frame from the internal queue."""
         try:
-            # Adjust chunk size based on actual rate
-            read_size = self.config.chunk_size
-            if self.actual_rate != self.target_rate:
-                read_size = int(self.config.chunk_size * (self.actual_rate / self.target_rate))
-
-            data = await self._loop.run_in_executor(
-                None, 
-                self.stream.read, 
-                read_size,
-                False 
-            )
-
-            if self.actual_rate != self.target_rate:
-                # Use linear interpolation for resampling small chunks.
-                # Fourier-based resampling (scipy.signal.resample) creates artifacts at chunk boundaries.
-                audio_data_int16 = np.frombuffer(data, dtype=np.int16)
-                new_len = self.config.chunk_size
-                resampled = np.interp(
-                    np.linspace(0, len(audio_data_int16), new_len, endpoint=False),
-                    np.arange(len(audio_data_int16)),
-                    audio_data_int16
-                ).astype(np.int16)
-                return resampled.tobytes()
-            
-            return data
-        except Exception as e:
-            logger.error(f"Error reading from PyAudio: {e}")
+            # Using wait_for to avoid blocking forever if something breaks
+            return await asyncio.wait_for(self._queue.get(), timeout=1.0)
+        except (asyncio.TimeoutError, Exception):
             return None
 
     async def play_frame(self, frame: bytes) -> None:
