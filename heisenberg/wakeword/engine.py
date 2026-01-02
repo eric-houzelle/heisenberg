@@ -76,12 +76,12 @@ class OpenWakeWordEngine(ABCWakeword):
                 # Predict
                 predictions = self.model.predict(audio_data)
                 
+                # Debug: log all scores if there's any activity
+                if any(s > 0.05 for s in predictions.values()):
+                    logger.debug(f"Predictions: {predictions}")
+
                 # Check detections
                 for wakeword, score in predictions.items():
-                    # Debug: Log scores above a low threshold to see progress
-                    if score > 0.1:
-                        logger.debug(f"Wakeword {wakeword} score: {score:.3f}")
-                        
                     if score >= self.config.threshold:
                         logger.info(f"Wakeword detected: {wakeword} (score: {score:.2f})")
                         if self.callback:
