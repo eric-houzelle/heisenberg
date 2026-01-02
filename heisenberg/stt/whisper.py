@@ -30,22 +30,19 @@ class WhisperSTT(ABCSTT):
         if Model is None:
             logger.error("pywhispercpp library not found. Please install it with 'pip install pywhispercpp'.")
         else:
-            if not os.path.exists(self.config.model_path):
-                logger.error(f"Whisper model file not found at: {os.path.abspath(self.config.model_path)}")
-            else:
-                try:
-                    logger.info(f"Initializing pywhispercpp with model: {self.config.model_path}...")
-                    self._model = Model(
-                        model_path=self.config.model_path,
-                        n_threads=self.config.n_threads,
-                        print_realtime=False,
-                        print_progress=False,
-                        print_timestamps=False,
-                        language=self.config.language
-                    )
-                    logger.info("WhisperSTT (pywhispercpp) successfully initialized.")
-                except Exception as e:
-                    logger.error(f"Failed to initialize WhisperSTT: {e}", exc_info=True)
+            try:
+                logger.info(f"Initializing pywhispercpp with model: {self.config.model_path}...")
+                self._model = Model(
+                    self.config.model_path,
+                    n_threads=self.config.n_threads,
+                    # Disabling prints as they might interfere with our own logging
+                    print_realtime=False,
+                    print_progress=False,
+                    print_timestamps=False
+                )
+                logger.info("WhisperSTT (pywhispercpp) successfully initialized.")
+            except Exception as e:
+                logger.error(f"Failed to initialize WhisperSTT: {e}", exc_info=True)
 
     async def start_stream(self) -> None:
         """Start the STT streaming session."""
@@ -78,9 +75,8 @@ class WhisperSTT(ABCSTT):
             audio_float32 = audio_int16.astype(np.float32) / 32768.0
             
             # Transcription using pywhispercpp
-            # Using transcription params
             logger.debug("Calling pywhispercpp.model.transcribe")
-            segments = self._model.transcribe(audio_float32)
+            segments = self._model.transcribe(audio_float32, language=self.config.language)
             
             # Combine segments
             full_text = " ".join([s.text for s in segments]).strip()
