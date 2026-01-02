@@ -8,6 +8,7 @@ dependencies = [
     "onnxruntime>=1.23.2",
     "openwakeword>=0.4.0",
     "pyaudio>=0.2.14",
+    "scipy>=1.12.0",
 ]
 
 [dependency-groups]

@@ -74,15 +74,11 @@ class OpenWakeWordEngine(ABCWakeword):
                     await asyncio.sleep(0.01)
                     continue
 
-                # Convert bytes to numpy array
-                audio_data = np.frombuffer(frame, dtype=np.int16).astype(np.float32) / 32768.0
+                # OpenWakeWord expects 16-bit PCM (int16)
+                audio_data = np.frombuffer(frame, dtype=np.int16)
                 
-                # Simple normalization to help with quiet mics
-                peak = np.max(np.abs(audio_data))
-                if peak > 0.01: # Don't normalize near-silence
-                    audio_data = audio_data / peak * 0.5 # target a 0.5 peak
-
                 # Predict
+                # NOTE: The model expects exactly 1280 samples for 80ms of audio
                 predictions = self.model.predict(audio_data)
                 
                 # Track and log max score periodically
@@ -95,7 +91,8 @@ class OpenWakeWordEngine(ABCWakeword):
                             await self.callback()
                 
                 if time.time() - last_log_time > 3:
-                     logger.debug(f"Max wakeword score in last 3s: {max_score_seen:.4f}")
+                     if max_score_seen > 0.0001:
+                         logger.debug(f"Max wakeword score in last 3s: {max_score_seen:.4f}")
                      max_score_seen = 0.0
                      last_log_time = time.time()
         except Exception as e:
