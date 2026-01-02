@@ -24,75 +24,31 @@ class PyAudioIO(ABCAudioIO):
         self.actual_rate = self.config.sample_rate
         
         # Async queue for buffered frames
-        self._queue: asyncio.Queue[bytes] = asyncio.Queue()
-        self._running = False
-        self._capture_thread: Optional[asyncio.Task] = None
+        self._queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=100) # Buffer max ~8 seconds
 
-    async def start(self) -> None:
-        if self.stream:
-            return
-
-        idx = self.config.input_device_index if self.config.input_device_index != -1 else None
+    def _audio_callback(self, in_data, frame_count, time_info, status):
+        """Callback from PyAudio thread when data is ready."""
+        if status:
+            logger.warning(f"PyAudio status: {status}")
         
-        # Try target rate first
+        # Process resampling in the callback thread (fast enough)
+        processed_data = self._process_frame(in_data)
+        
+        # Use call_soon_threadsafe to put in the asyncio queue
         try:
-            self.stream = self.pa.open(
-                format=pyaudio.paInt16,
-                channels=self.config.channels,
-                rate=self.target_rate,
-                input=True,
-                input_device_index=idx,
-                frames_per_buffer=self.config.chunk_size
-            )
-            self.actual_rate = self.target_rate
-            logger.info(f"PyAudioIO started at target rate: {self.target_rate}Hz")
-        except Exception:
-            # Try device default rate
-            device_info = self.pa.get_default_input_device_info() if idx is None else self.pa.get_device_info_by_index(idx)
-            self.actual_rate = int(device_info['defaultSampleRate'])
-            logger.warning(f"Target rate {self.target_rate}Hz unsupported. Falling back to device rate: {self.actual_rate}Hz")
-            
-            # Use a larger buffer for the hardware stream when resampling
-            hw_chunk_size = int(self.config.chunk_size * (self.actual_rate / self.target_rate))
-            self.stream = self.pa.open(
-                format=pyaudio.paInt16,
-                channels=self.config.channels,
-                rate=self.actual_rate,
-                input=True,
-                input_device_index=idx,
-                frames_per_buffer=hw_chunk_size * 2 # Double buffer to avoid overflows
-            )
-            logger.info(f"PyAudioIO started at fallback rate: {self.actual_rate}Hz")
-
-        self._running = True
-        self._capture_thread = asyncio.create_task(self._capture_loop())
-
-    async def _capture_loop(self):
-        """Continuously read from the stream and push to the queue."""
-        logger.debug("Audio capture loop started")
-        read_size = self.config.chunk_size
-        if self.actual_rate != self.target_rate:
-            read_size = int(self.config.chunk_size * (self.actual_rate / self.target_rate))
-
-        while self._running and self.stream:
+            self._loop.call_soon_threadsafe(self._queue.put_nowait, processed_data)
+        except asyncio.QueueFull:
+            # If queue is full, we drop oldest frame to maintain "real-time"
             try:
-                # Read blockingly in a thread pool to avoid blocking the event loop
-                data = await self._loop.run_in_executor(
-                    None, 
-                    self.stream.read, 
-                    read_size,
-                    False # exception_on_overflow=False
-                )
-                
-                if data:
-                    processed_data = self._process_frame(data)
-                    await self._queue.put(processed_data)
-                    
-            except Exception as e:
-                if self._running:
-                    logger.error(f"Error in audio capture loop: {e}")
-                await asyncio.sleep(0.1)
-        logger.debug("Audio capture loop stopped")
+                # We can't actually get() in a callback easily without slowing down
+                # But we can try to pop if we were in the loop.
+                # Simplest for now: just log overflow
+                logger.debug("Audio buffer overflow, dropping frame")
+                pass
+            except Exception:
+                pass
+        
+        return (None, pyaudio.paContinue)
 
     def _process_frame(self, data: bytes) -> bytes:
         """Resample frame if needed."""
@@ -109,16 +65,50 @@ class PyAudioIO(ABCAudioIO):
         ).astype(np.int16)
         return resampled.tobytes()
 
-    async def stop(self) -> None:
-        self._running = False
-        if self._capture_thread:
-            self._capture_thread.cancel()
-            try:
-                await self._capture_thread
-            except asyncio.CancelledError:
-                pass
-            self._capture_thread = None
+    async def start(self) -> None:
+        if self.stream:
+            return
 
+        idx = self.config.input_device_index if self.config.input_device_index != -1 else None
+        
+        # Clear queue
+        while not self._queue.empty():
+            self._queue.get_nowait()
+
+        # Try target rate first
+        try:
+            self.stream = self.pa.open(
+                format=pyaudio.paInt16,
+                channels=self.config.channels,
+                rate=self.target_rate,
+                input=True,
+                input_device_index=idx,
+                frames_per_buffer=self.config.chunk_size,
+                stream_callback=self._audio_callback
+            )
+            self.actual_rate = self.target_rate
+            logger.info(f"PyAudioIO started at target rate: {self.target_rate}Hz (Callback mode)")
+        except Exception:
+            # Try device default rate
+            device_info = self.pa.get_default_input_device_info() if idx is None else self.pa.get_device_info_by_index(idx)
+            self.actual_rate = int(device_info['defaultSampleRate'])
+            logger.warning(f"Target rate {self.target_rate}Hz unsupported. Falling back to device rate: {self.actual_rate}Hz")
+            
+            hw_chunk_size = int(self.config.chunk_size * (self.actual_rate / self.target_rate))
+            self.stream = self.pa.open(
+                format=pyaudio.paInt16,
+                channels=self.config.channels,
+                rate=self.actual_rate,
+                input=True,
+                input_device_index=idx,
+                frames_per_buffer=hw_chunk_size,
+                stream_callback=self._audio_callback
+            )
+            logger.info(f"PyAudioIO started at fallback rate: {self.actual_rate}Hz (Callback mode)")
+
+        self.stream.start_stream()
+
+    async def stop(self) -> None:
         if self.stream:
             try:
                 self.stream.stop_stream()
@@ -131,9 +121,8 @@ class PyAudioIO(ABCAudioIO):
     async def read_frame(self) -> Optional[bytes]:
         """Pop a frame from the internal queue."""
         try:
-            # Using wait_for to avoid blocking forever if something breaks
-            return await asyncio.wait_for(self._queue.get(), timeout=1.0)
-        except (asyncio.TimeoutError, Exception):
+            return await self._queue.get()
+        except Exception:
             return None
 
     async def play_frame(self, frame: bytes) -> None:
