@@ -4,7 +4,7 @@ Heisenberg is a modular, high-performance voice assistant built with Python. It 
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 Heisenberg follows a decoupled, event-driven architecture. Components communicate asynchronously via an `EventRouter`, allowing for high responsiveness and easy swapability of modules.
 
@@ -20,7 +20,7 @@ graph TD
     E -->|SPEECH_START/END| G
     F -->|TRANSCRIPTION_FINAL| G
     
-    G -->|Transition| H[State: IDLE | LISTENING | THINKING]
+    G -->|Transition| H["State: IDLE | LISTENING | THINKING"]
 ```
 
 ### Core Components
@@ -31,7 +31,7 @@ graph TD
 
 ---
 
-## �️ System Requirements
+## System Requirements
 
 Before installing Python dependencies, ensure your system has the following:
 
@@ -45,7 +45,7 @@ Before installing Python dependencies, ensure your system has the following:
 
 ---
 
-## 🚀 Installation & Setup
+## Installation & Setup
 
 ### 1. Requirements Installation
 Using `uv` (recommended) or `pip`:
@@ -67,7 +67,7 @@ Whisper models are loaded locally. By default, it expects a model file (e.g., `b
 
 ---
 
-## ⚙️ Configuration Reference
+## Configuration Reference
 
 Edit `heisenberg/core/config.py` to customize the behavior.
 
@@ -95,7 +95,7 @@ Edit `heisenberg/core/config.py` to customize the behavior.
 
 ---
 
-## 🎙️ Audio Pipeline Deep Dive
+## Audio Pipeline Deep Dive
 
 Heisenberg implements a sophisticated audio pipeline in `PyAudioIO` to ensure high quality even in noisy environments:
 
@@ -106,7 +106,7 @@ Heisenberg implements a sophisticated audio pipeline in `PyAudioIO` to ensure hi
 
 ---
 
-## 🏃 Running the Assistant
+## Running the Assistant
 
 Execute the main loop:
 ```bash
@@ -121,7 +121,7 @@ If you encounter audio issues:
 
 ---
 
-## 🧪 Testing
+## Testing
 
 Run the test suite to ensure everything is wired correctly:
 ```bash
@@ -130,6 +130,6 @@ uv run pytest
 
 ---
 
-## 📜 License
+## License
 
 This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
