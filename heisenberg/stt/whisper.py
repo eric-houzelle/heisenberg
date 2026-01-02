@@ -35,6 +35,7 @@ class WhisperSTT(ABCSTT):
                 self._model = Model(
                     self.config.model_path,
                     n_threads=self.config.n_threads,
+                    params_sampling_strategy=self.config.sampling_strategy,
                     # Disabling prints as they might interfere with our own logging
                     print_realtime=False,
                     print_progress=False,
@@ -79,8 +80,6 @@ class WhisperSTT(ABCSTT):
             segments = self._model.transcribe(
                 audio_float32, 
                 language=self.config.language,
-                beam_size=self.config.beam_size,
-                best_of=self.config.best_of,
                 initial_prompt=self.config.initial_prompt
             )
             

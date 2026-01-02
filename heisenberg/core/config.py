@@ -21,11 +21,10 @@ class WakewordConfig:
 
 @dataclass
 class STTConfig:
-    model_path: str = "tiny-q8_0"
+    model_path: str = "base-q8_0"
     language: str = "fr"
     n_threads: int = 4
-    beam_size: int = 5
-    best_of: int = 5
+    sampling_strategy: int = 1 # 0: GREEDY, 1: BEAM_SEARCH
     initial_prompt: str = "Bonjour, je suis ton assistant Heisenberg."
     debug_dump: bool = True # Enable dumping audio to WAV for quality check
 
