@@ -52,9 +52,15 @@ class WhisperSTT(ABCSTT):
             return
         
         self._is_running = False
-        logger.info("WhisperSTT session stopped, processing final audio...")
+        buffer_len = len(self._buffer)
+        logger.info(f"WhisperSTT session stopped. Buffer size: {buffer_len} bytes. Processing final audio...")
         
-        if not self._whisper or not self._buffer:
+        if not self._whisper:
+            logger.error("Whisper engine not initialized!")
+            return
+            
+        if buffer_len == 0:
+            logger.warning("Audio buffer is empty, nothing to transcribe.")
             return
 
         try:
