@@ -30,15 +30,20 @@ class WhisperSTT(ABCSTT):
         if Whisper is None:
             logger.error("whispercpp library not found. Please install it with 'pip install whispercpp'.")
         else:
-            try:
-                self._whisper = Whisper(
-                    model_path=self.config.model_path,
-                    language=self.config.language,
-                    n_threads=self.config.n_threads
-                )
-                logger.info(f"WhisperSTT initialized with model: {self.config.model_path}")
-            except Exception as e:
-                logger.error(f"Failed to initialize WhisperSTT: {e}")
+            import os
+            if not os.path.exists(self.config.model_path):
+                logger.error(f"Whisper model file not found at: {os.path.abspath(self.config.model_path)}")
+            else:
+                try:
+                    logger.info(f"Initializing WhisperSTT with model: {self.config.model_path}...")
+                    self._whisper = Whisper(
+                        model_path=self.config.model_path,
+                        language=self.config.language,
+                        n_threads=self.config.n_threads
+                    )
+                    logger.info("WhisperSTT successfully initialized.")
+                except Exception as e:
+                    logger.error(f"Failed to initialize WhisperSTT: {e}", exc_info=True)
 
     async def start_stream(self) -> None:
         """Start the STT streaming session."""
