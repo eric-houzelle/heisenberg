@@ -10,9 +10,9 @@ def stt_config():
 
 @pytest.mark.asyncio
 async def test_whisper_stt_flow(stt_config):
-    # Mock whispercpp
-    with patch("heisenberg.stt.whisper.Whisper") as MockWhisper:
-        mock_instance = MockWhisper.return_value
+    # Mock pywhispercpp
+    with patch("heisenberg.stt.whisper.Model") as MockModel:
+        mock_instance = MockModel.return_value
         # Mock segments
         mock_segment = MagicMock()
         mock_segment.text = "Hello world"
@@ -30,11 +30,11 @@ async def test_whisper_stt_flow(stt_config):
         
         # Simulate stream
         await stt.start_stream()
-        # Feed 160 samples (320 bytes for 16-bit)
+        # Feed some frames (e.g., 320 bytes for 16-bit 16kHz mono)
         await stt.feed_audio(bytes([0] * 320))
         await stt.stop_stream()
         
         # Verify
         assert final_text == "Hello world"
-        assert MockWhisper.called
+        assert MockModel.called
         assert mock_instance.transcribe.called

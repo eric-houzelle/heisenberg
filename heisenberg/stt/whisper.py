@@ -1,48 +1,49 @@
 import logging
-import io
+import os
 import wave
 import numpy as np
 from typing import Callable, Awaitable, Optional, List
 from heisenberg.interfaces.stt import ABCSTT
 from heisenberg.core.config import STTConfig
 
-# Try to import whispercpp, handle missing dependency gracefully
+# Try to import pywhispercpp, handle missing dependency gracefully
 try:
-    from whispercpp import Whisper
+    from pywhispercpp.model import Model
 except ImportError:
-    Whisper = None
+    Model = None
 
 logger = logging.getLogger(__name__)
 
 class WhisperSTT(ABCSTT):
     """
-    STT implementation using whispercpp (GGML models).
+    STT implementation using pywhispercpp (GGML models).
     """
 
     def __init__(self, config: STTConfig):
         self.config = config
-        self._whisper: Optional[Whisper] = None
+        self._model: Optional[Model] = None
         self._partial_callback: Optional[Callable[[str], Awaitable[None]]] = None
         self._final_callback: Optional[Callable[[str], Awaitable[None]]] = None
         self._buffer = bytearray()
         self._is_running = False
 
-        if Whisper is None:
-            logger.error("whispercpp library not found. Please install it with 'pip install whispercpp'.")
+        if Model is None:
+            logger.error("pywhispercpp library not found. Please install it with 'pip install pywhispercpp'.")
         else:
-            import os
             if not os.path.exists(self.config.model_path):
                 logger.error(f"Whisper model file not found at: {os.path.abspath(self.config.model_path)}")
             else:
                 try:
-                    logger.info(f"Initializing WhisperSTT with model: {self.config.model_path}...")
-                    # The library requires using from_pretrained factory method
-                    self._whisper = Whisper.from_pretrained(
-                        self.config.model_path,
-                        # Some versions might take n_threads here, others in transcribe
-                        # We'll stick to the model path first as per the error message
+                    logger.info(f"Initializing pywhispercpp with model: {self.config.model_path}...")
+                    self._model = Model(
+                        model_path=self.config.model_path,
+                        n_threads=self.config.n_threads,
+                        print_realtime=False,
+                        print_progress=False,
+                        print_timestamps=False,
+                        language=self.config.language
                     )
-                    logger.info("WhisperSTT successfully initialized.")
+                    logger.info("WhisperSTT (pywhispercpp) successfully initialized.")
                 except Exception as e:
                     logger.error(f"Failed to initialize WhisperSTT: {e}", exc_info=True)
 
@@ -61,8 +62,8 @@ class WhisperSTT(ABCSTT):
         buffer_len = len(self._buffer)
         logger.info(f"WhisperSTT session stopped. Buffer size: {buffer_len} bytes. Processing final audio...")
         
-        if not self._whisper:
-            logger.error("Whisper engine not initialized!")
+        if not self._model:
+            logger.error("Whisper model not initialized!")
             return
             
         if buffer_len == 0:
@@ -70,53 +71,26 @@ class WhisperSTT(ABCSTT):
             return
 
         try:
+            # pywhispercpp can take a numpy array directly or a file.
             # Convert buffer to numpy array (float32, normalized)
             # whisper.cpp expects 16kHz mono. PyAudioIO provides 16kHz mono int16.
             audio_int16 = np.frombuffer(self._buffer, dtype=np.int16)
             audio_float32 = audio_int16.astype(np.float32) / 32768.0
             
-            # Since whispercpp's transcribe might not support raw arrays directly in all versions,
-            # or it might expect a file path, we check how to call it.
-            # Based on user snippet: segments = w.transcribe("audio.wav")
-            # If it only takes a file, we might need a temporary WAV file.
+            # Transcription using pywhispercpp
+            # Using transcription params
+            logger.debug("Calling pywhispercpp.model.transcribe")
+            segments = self._model.transcribe(audio_float32)
             
-            # Let's try to use a temporary file to be safe and match the user snippet
-            import tempfile
-            import os
+            # Combine segments
+            full_text = " ".join([s.text for s in segments]).strip()
+            logger.info(f"Full transcription: '{full_text}'")
             
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
-                tmp_path = tmp_file.name
-                
-            try:
-                # Write to WAV
-                with wave.open(tmp_path, 'wb') as wf:
-                    wf.setnchannels(1)
-                    wf.setsampwidth(2) # 16-bit
-                    wf.setframerate(16000)
-                    wf.writeframes(self._buffer)
-                
-                # Transcribe
-                logger.debug(f"Calling whispercpp.transcribe on {tmp_path}")
-                segments = self._whisper.transcribe(
-                    tmp_path,
-                    language=self.config.language,
-                    n_threads=self.config.n_threads
-                )
-                logger.debug(f"Transcription complete. Got {len(segments)} segments.")
-                
-                # Combine segments
-                full_text = " ".join([s.text for s in segments]).strip()
-                logger.info(f"Full transcription: '{full_text}'")
-                
-                if self._final_callback:
-                    await self._final_callback(full_text)
-                    
-            finally:
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
+            if self._final_callback:
+                await self._final_callback(full_text)
                     
         except Exception as e:
-            logger.error(f"Error during transcription: {e}")
+            logger.error(f"Error during transcription: {e}", exc_info=True)
         finally:
             self._buffer = bytearray()
 
