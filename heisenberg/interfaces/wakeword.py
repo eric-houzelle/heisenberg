@@ -21,3 +21,8 @@ class ABCWakeword(ABC):
     def on_detected(self, callback: Callable[[], Awaitable[None]]) -> None:
         """Register a callback to be called when the wakeword is detected."""
         pass
+
+    @abstractmethod
+    async def feed_audio(self, frame: bytes) -> None:
+        """Feed audio data to the wakeword engine."""
+        pass

@@ -10,12 +10,10 @@ from heisenberg.core.config import WakewordConfig
 logger = logging.getLogger(__name__)
 
 class OpenWakeWordEngine(ABCWakeword):
-    def __init__(self, config: WakewordConfig, audio_source: ABCAudioIO):
+    def __init__(self, config: WakewordConfig):
         self.config = config
-        self.audio_source = audio_source
         self.callback: Optional[Callable[[], Awaitable[None]]] = None
         self.running = False
-        self._task: Optional[asyncio.Task] = None
         
         # Resolve model paths
         pretrained_models = openwakeword.get_pretrained_model_paths()
@@ -46,42 +44,30 @@ class OpenWakeWordEngine(ABCWakeword):
         self.callback = callback
 
     async def start(self) -> None:
-        if self.running:
-            return
         self.running = True
-        self._task = asyncio.create_task(self._run())
         logger.info("OpenWakeWordEngine started")
 
     async def stop(self) -> None:
         self.running = False
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
         logger.info("OpenWakeWordEngine stopped")
 
-    async def _run(self) -> None:
-        try:
-            while self.running:
-                frame = await self.audio_source.read_frame()
-                if frame is None:
-                    await asyncio.sleep(0.01)
-                    continue
+    async def feed_audio(self, frame: bytes) -> None:
+        """Feed audio data to the wakeword engine."""
+        if not self.running:
+            return
 
-                # OpenWakeWord expects 16-bit PCM (int16)
-                audio_data = np.frombuffer(frame, dtype=np.int16)
-                
-                # Predict
-                predictions = self.model.predict(audio_data)
-                
-                # Check detections
-                for wakeword, score in predictions.items():
-                    if score >= self.config.threshold:
-                        logger.info(f"Wakeword detected: {wakeword} (score: {score:.2f})")
-                        if self.callback:
-                            await self.callback()
+        try:
+            # OpenWakeWord expects 16-bit PCM (int16)
+            audio_data = np.frombuffer(frame, dtype=np.int16)
+            
+            # Predict
+            predictions = self.model.predict(audio_data)
+            
+            # Check detections
+            for wakeword, score in predictions.items():
+                if score >= self.config.threshold:
+                    logger.info(f"Wakeword detected: {wakeword} (score: {score:.2f})")
+                    if self.callback:
+                        await self.callback()
         except Exception as e:
-            logger.error(f"Error in OpenWakeWordEngine loop: {e}", exc_info=True)
-            self.running = False
+            logger.error(f"Error in OpenWakeWordEngine processing: {e}", exc_info=True)
