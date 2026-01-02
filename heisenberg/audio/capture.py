@@ -84,14 +84,19 @@ class PyAudioIO(ABCAudioIO):
                 False 
             )
 
+            # Debug: Log RMS level to check if audio is active
+            audio_data_int16 = np.frombuffer(data, dtype=np.int16)
+            rms = np.sqrt(np.mean(np.square(audio_data_int16.astype(np.float32))))
+            if rms > 10: # Only log if there's some sound to avoid spam
+                 logger.debug(f"Audio RMS Level: {rms:.2f}")
+
             if self.actual_rate != self.target_rate:
                 # Resample using numpy
-                audio_data = np.frombuffer(data, dtype=np.int16)
                 new_len = self.config.chunk_size
                 resampled = np.interp(
-                    np.linspace(0, len(audio_data), new_len, endpoint=False),
-                    np.arange(len(audio_data)),
-                    audio_data
+                    np.linspace(0, len(audio_data_int16), new_len, endpoint=False),
+                    np.arange(len(audio_data_int16)),
+                    audio_data_int16
                 ).astype(np.int16)
                 return resampled.tobytes()
             

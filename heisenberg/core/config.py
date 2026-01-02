@@ -11,7 +11,7 @@ class AudioConfig:
     output_device_index: int = -1
     sample_rate: int = 16000
     channels: int = 1
-    chunk_size: int = 1024
+    chunk_size: int = 1280
 
 @dataclass
 class WakewordConfig:

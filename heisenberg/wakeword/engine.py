@@ -78,6 +78,10 @@ class OpenWakeWordEngine(ABCWakeword):
                 
                 # Check detections
                 for wakeword, score in predictions.items():
+                    # Debug: Log scores above a low threshold to see progress
+                    if score > 0.1:
+                        logger.debug(f"Wakeword {wakeword} score: {score:.3f}")
+                        
                     if score >= self.config.threshold:
                         logger.info(f"Wakeword detected: {wakeword} (score: {score:.2f})")
                         if self.callback:
