@@ -109,6 +109,10 @@ class PyAudioIO(ABCAudioIO):
             target_rms = 0.1 # -20dB FS
             gain = min(target_rms / rms, 10.0) # Max 10x boost
             audio_float = np.clip(audio_float * gain, -1.0, 1.0)
+            
+        if getattr(self, '_log_counter', 0) % 100 == 0:
+            logger.debug(f"Audio Probe: Raw RMS={rms:.4f}, Resampled={len(audio_float)} samples")
+        self._log_counter = getattr(self, '_log_counter', 0) + 1
 
         # Convert back to bytes at 16kHz
         return (audio_float * 32767.0).astype(np.int16).tobytes()
