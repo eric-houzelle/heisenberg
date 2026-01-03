@@ -126,7 +126,9 @@ class PyAudioIO(ABCAudioIO):
         # Try hardware rate (48k or 16k)
         try:
             # For RNNoise, we want 10ms chunks = hardware_rate / 100
-            chunk_size = self.hardware_rate // 100 
+            # However, OpenWakeWord requires at least 25ms.
+            # We use 30ms (3 * 10ms) to satisfy both.
+            chunk_size = (self.hardware_rate * 3) // 100 
             
             self.stream = self.pa.open(
                 format=pyaudio.paInt16,
@@ -151,7 +153,7 @@ class PyAudioIO(ABCAudioIO):
                 rate=self.actual_rate,
                 input=True,
                 input_device_index=idx,
-                frames_per_buffer=int(self.actual_rate / 100), # 10ms
+                frames_per_buffer=int(self.actual_rate * 3 / 100), # 30ms
                 stream_callback=self._audio_callback
             )
             logger.info(f"PyAudioIO started at fallback rate: {self.actual_rate}Hz")
