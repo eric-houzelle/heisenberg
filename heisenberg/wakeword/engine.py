@@ -63,18 +63,9 @@ class OpenWakeWordEngine(ABCWakeword):
             # Predict
             predictions = self.model.predict(audio_data)
             
-            # Debug: log scores periodically or if any score > 0.05
-            max_score = 0.0
-            if predictions:
-                max_score = max(predictions.values())
-            
-            rms = np.sqrt(np.mean(np.square(audio_data.astype(np.float32) / 32768.0)))
-            if max_score > 0.1 or (getattr(self, '_log_counter', 0) % 50 == 0):
-                logger.debug(f"Wakeword Debug: RMS={rms:.4f}, Max Score={max_score:.2f}")
-            self._log_counter = getattr(self, '_log_counter', 0) + 1
-
             # Check detections
             for wakeword, score in predictions.items():
+                logger.debug(f"Wakeword score: {score:.2f}") 
                 if score >= self.config.threshold:
                     logger.info(f"Wakeword detected: {wakeword} (score: {score:.2f})")
                     if self.callback:

@@ -101,21 +101,11 @@ class PyAudioIO(ABCAudioIO):
             else:
                 return b""
 
-        # 3. RMS Normalization (Simple AGC) on the 16kHz signal
-        audio_float = audio_int16.astype(np.float32) / 32768.0
-        rms = np.sqrt(np.mean(np.square(audio_float)))
+        # 3. No Normalization - return raw audio
+        # OpenWakeWord and other models perform better with raw dynamics.
         
-        if rms > 0.003: # Threshold to avoid boosting silence
-            target_rms = 0.1 # -20dB FS
-            gain = min(target_rms / rms, 10.0) # Max 10x boost
-            audio_float = np.clip(audio_float * gain, -1.0, 1.0)
-            
-        if getattr(self, '_log_counter', 0) % 100 == 0:
-            logger.debug(f"Audio Probe: Raw RMS={rms:.4f}, Resampled={len(audio_float)} samples")
-        self._log_counter = getattr(self, '_log_counter', 0) + 1
-
         # Convert back to bytes at 16kHz
-        return (audio_float * 32767.0).astype(np.int16).tobytes()
+        return audio_int16.tobytes()
 
     async def start(self) -> None:
         if self.stream:
@@ -129,10 +119,8 @@ class PyAudioIO(ABCAudioIO):
 
         # Try hardware rate (48k or 16k)
         try:
-            # For RNNoise, we want 10ms chunks = hardware_rate / 100
-            # However, OpenWakeWord requires at least 25ms.
-            # We use 30ms (3 * 10ms) to satisfy both.
-            chunk_size = (self.hardware_rate * 3) // 100 
+            # OpenWakeWord requires at least 80ms (1280 samples @ 16kHz) for optimal performance.
+            chunk_size = (self.hardware_rate * 8) // 100 
             
             self.stream = self.pa.open(
                 format=pyaudio.paInt16,
@@ -157,7 +145,7 @@ class PyAudioIO(ABCAudioIO):
                 rate=self.actual_rate,
                 input=True,
                 input_device_index=idx,
-                frames_per_buffer=int(self.actual_rate * 3 / 100), # 30ms
+                frames_per_buffer=int(self.actual_rate * 8 / 100), # 80ms
                 stream_callback=self._audio_callback
             )
             logger.info(f"PyAudioIO started at fallback rate: {self.actual_rate}Hz")
