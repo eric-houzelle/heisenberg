@@ -113,7 +113,7 @@ async def main():
                 # Here you could feed tokens to TTS for streaming playback
                 # TODO: Implement TTS streaming
             
-            logger.info(f"LLM generation complete: {llm_response[:100]}...")
+            logger.info(f"LLM generation complete. Full response:\n{llm_response}")
             
             # Emit LLM_COMPLETE event
             await router.dispatch(Event.LLM_COMPLETE, llm_response)
