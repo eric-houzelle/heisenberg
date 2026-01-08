@@ -11,6 +11,8 @@ from heisenberg.audio.capture import PyAudioIO
 from heisenberg.wakeword.engine import OpenWakeWordEngine
 from heisenberg.stt.whisper import WhisperSTT
 from heisenberg.orchestrator.state import State
+from heisenberg.llm.stream import LlamaCppLLM
+from heisenberg.llm.prompts import PromptBuilder
 
 async def main():
     setup_logging(level="INFO")
@@ -32,16 +34,25 @@ async def main():
     if config.vad.enabled:
         from heisenberg.audio.vad import SileroVADEngine
         vad_engine = SileroVADEngine(config.vad)
+    
+    # LLM setup
+    prompt_builder = PromptBuilder(
+        system_prompt=config.llm.system_prompt,
+        format_style="plain"  # Adjust based on your LFM2 model format
+    )
+    llm_engine = LlamaCppLLM(config.llm, prompt_builder)
+    
+    # State variables
+    was_speaking = False
+    listening_task = None
+    current_user_query = None
+    llm_response = ""
 
     # Register detection callback to FSM
     async def _on_wakeword_detected():
         await fsm.handle_event(Event.WAKEWORD_DETECTED)
         
     wakeword_engine.on_detected(_on_wakeword_detected)
-
-    # Voice Activity Detection State
-    was_speaking = False
-    listening_task = None
 
     async def stop_listening_after_timeout(seconds: float):
         try:
@@ -53,9 +64,11 @@ async def main():
             pass
 
     async def on_wakeword():
-        nonlocal was_speaking, listening_task
+        nonlocal was_speaking, listening_task, current_user_query, llm_response
         logger.info("Wakeword detected handler: Starting STT stream")
         was_speaking = False
+        current_user_query = None
+        llm_response = ""
         await stt_engine.start_stream()
         if vad_engine:
             vad_engine.reset()
@@ -66,19 +79,52 @@ async def main():
         listening_task = asyncio.create_task(stop_listening_after_timeout(10.0))
 
     async def on_transcription_final(text: str):
+        nonlocal current_user_query, llm_response
+        current_user_query = text
         logger.info(f"Transcription final: {text}")
+        
         try:
-            # Trigger EVENT so FSM transitions to THINKING
+            # Transition to THINKING state
             await fsm.handle_event(Event.TRANSCRIPTION_FINAL)
             
-            # Simulate "thinking" or processing time
-            await asyncio.sleep(0.5)
+            # Get conversation history from session manager
+            history = fsm.session_manager.get_conversation_history(
+                max_turns=config.llm.max_history_turns
+            )
             
-            # For now, back to IDLE manually since we don't have LLM/TTS events yet
+            # Start LLM generation with streaming
+            logger.info("Starting LLM generation...")
+            llm_response = ""
+            first_token = True
+            
+            async for token in llm_engine.generate(text, conversation_history=history):
+                llm_response += token
+                
+                # Emit LLM_TOKEN event for first token (for latency tracking)
+                if first_token:
+                    logger.info("First LLM token received")
+                    await router.dispatch(Event.LLM_TOKEN, token)
+                    first_token = False
+                
+                # Here you could feed tokens to TTS for streaming playback
+                # TODO: Implement TTS streaming
+            
+            logger.info(f"LLM generation complete: {llm_response[:100]}...")
+            
+            # Emit LLM_COMPLETE event
+            await router.dispatch(Event.LLM_COMPLETE, llm_response)
+            
+            # Store conversation turn in session
+            fsm.session_manager.add_conversation_turn(current_user_query, llm_response)
+            
+            # TODO: Once TTS is implemented, wait for TTS_COMPLETE event
+            # For now, simulate a brief pause and return to IDLE
+            await asyncio.sleep(0.5)
             await fsm.transition(State.IDLE)
             logger.info("System returned to IDLE state. Ready for next command.")
+            
         except Exception as e:
-            logger.error(f"Error during post-transcription: {e}")
+            logger.error(f"Error during LLM processing: {e}", exc_info=True)
             await fsm.transition(State.IDLE)
 
     router.register(Event.WAKEWORD_DETECTED, on_wakeword)
@@ -92,6 +138,7 @@ async def main():
         asyncio.create_task(audio_source.stop())
         asyncio.create_task(wakeword_engine.stop())
         asyncio.create_task(stt_engine.stop_stream())
+        asyncio.create_task(llm_engine.cancel())
         # Give it a moment to stop before exiting
         loop.call_later(1, sys.exit, 0)
 
@@ -134,6 +181,7 @@ async def main():
     finally:
         await audio_source.stop()
         await wakeword_engine.stop()
+        await llm_engine.cancel()
 
 if __name__ == "__main__":
     try:

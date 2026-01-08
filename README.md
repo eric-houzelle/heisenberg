@@ -27,6 +27,7 @@ graph TD
 - **Audio Layer (`heisenberg.audio`)**: Real-time capture uses PyAudio.
 - **Wakeword Layer (`heisenberg.wakeword`)**: Uses `openwakeword` for background listening.
 - **STT Layer (`heisenberg.stt`)**: Leverages `pywhispercpp` (GGML models) for local, fast transcription.
+- **LLM Layer (`heisenberg.llm`)**: Local language model via `llama.cpp` (LFM2-350M) with streaming support.
 - **Orchestrator (`heisenberg.orchestrator`)**: Manages transitions and business logic via an FSM.
 
 ---
@@ -64,6 +65,13 @@ uv sync
 
 ### 2. Model Downloads
 Whisper models are loaded locally. By default, it expects a model file (e.g., `base-q8_0.bin`) in your working directory or a path specified in the config.
+
+**LLM Setup**: To use the language model capabilities, you'll need to:
+1. Install `llama.cpp` server
+2. Download the LFM2-350M model (GGUF format)
+3. Start the llama.cpp server
+
+See the [LLM Guide](docs/LLM_GUIDE.md) for detailed instructions.
 
 ---
 

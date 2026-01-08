@@ -1,0 +1,58 @@
+# Heisenberg Configuration Example
+# Copy this file to config.toml and adjust values as needed
+
+[logging]
+level = "INFO"  # DEBUG, INFO, WARNING, ERROR
+format = "json"  # json or text
+
+[audio]
+input_device_index = -1  # -1 for default microphone
+output_device_index = -1  # -1 for default speaker
+sample_rate = 16000
+channels = 1
+chunk_size = 1280
+
+[wakeword]
+models = ["hey_jarvis"]  # List of openwakeword models
+threshold = 0.3  # 0.0 to 1.0 (lower = more sensitive)
+inference_framework = "onnxrt"
+
+[stt]
+model_path = "base-q8_0"  # Path to Whisper GGML model
+language = "fr"  # ISO 639-1 language code
+n_threads = 4
+sampling_strategy = 1  # 0: GREEDY, 1: BEAM_SEARCH
+initial_prompt = "Bonjour, je suis ton assistant Heisenberg."
+debug_dump = true  # Save audio to WAV for debugging
+
+[vad]
+enabled = true
+threshold = 0.5  # Speech detection sensitivity
+min_silence_duration_ms = 800  # Duration of silence before stopping
+speech_pad_ms = 100  # Padding around speech segments
+
+[llm]
+endpoint = "http://localhost:8080/completion"
+model_name = "LFM2-350M"
+temperature = 0.7  # 0.0 = deterministic, 1.0 = creative
+max_tokens = 512  # Maximum response length
+top_p = 0.9  # Nucleus sampling
+top_k = 40  # Top-K sampling
+repeat_penalty = 1.1  # Penalty for repetition
+timeout_seconds = 30
+max_history_turns = 5  # Number of conversation turns to keep
+
+# System prompt defines the assistant's personality
+system_prompt = """Tu es Heisenberg, un assistant vocal intelligent et serviable.
+Réponds de manière concise et naturelle en français.
+Reste dans le contexte de la conversation et aide l'utilisateur."""
+
+# Uncomment to use a predefined personality:
+# system_prompt_preset = "concise"  # Options: default, concise, friendly, professional, technical
+
+[tts]
+# TTS configuration (not yet implemented)
+enabled = false
+engine = "piper"  # Future: piper, espeak, etc.
+voice = "fr_FR-siwis-medium"
+

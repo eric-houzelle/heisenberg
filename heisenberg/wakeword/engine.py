@@ -6,6 +6,7 @@ from typing import Callable, Awaitable, Optional
 from heisenberg.interfaces.wakeword import ABCWakeword
 from heisenberg.interfaces.audio import ABCAudioIO
 from heisenberg.core.config import WakewordConfig
+import wave
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,18 @@ class OpenWakeWordEngine(ABCWakeword):
         )
         logger.info(f"OpenWakeWordEngine initialized with models: {resolved_model_paths}")
 
+        # Debug: Record audio to file
+        self.debug_wav_path = "/tmp/wakeword_debug.wav"
+        try:
+            self.debug_wav = wave.open(self.debug_wav_path, "wb")
+            self.debug_wav.setnchannels(1)
+            self.debug_wav.setsampwidth(2) # 16-bit
+            self.debug_wav.setframerate(16000)
+            logger.info(f"DEBUG: Recording wakeword audio to {self.debug_wav_path}")
+        except Exception as e:
+            logger.error(f"Failed to open debug WAV: {e}")
+            self.debug_wav = None
+
     def on_detected(self, callback: Callable[[], Awaitable[None]]) -> None:
         self.callback = callback
 
@@ -49,6 +62,12 @@ class OpenWakeWordEngine(ABCWakeword):
 
     async def stop(self) -> None:
         self.running = False
+        if self.debug_wav:
+            try:
+                self.debug_wav.close()
+            except:
+                pass
+            self.debug_wav = None
         logger.info("OpenWakeWordEngine stopped")
 
     async def feed_audio(self, frame: bytes) -> None:
@@ -60,11 +79,17 @@ class OpenWakeWordEngine(ABCWakeword):
             # OpenWakeWord expects 16-bit PCM (int16)
             audio_data = np.frombuffer(frame, dtype=np.int16)
             
+            # Debug: Write to file
+            if self.debug_wav:
+                self.debug_wav.writeframes(frame)
+
             # Predict
             predictions = self.model.predict(audio_data)
             
             # Check detections
             for wakeword, score in predictions.items():
+                # DEBUG: Always print score
+                print(f"DEBUG: Wakeword '{wakeword}' score: {score:.4f}")
                 logger.debug(f"Wakeword score: {score:.2f}") 
                 if score >= self.config.threshold:
                     logger.info(f"Wakeword detected: {wakeword} (score: {score:.2f})")

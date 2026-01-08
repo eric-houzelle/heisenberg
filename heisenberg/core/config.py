@@ -36,12 +36,26 @@ class VADConfig:
     speech_pad_ms: int = 100
 
 @dataclass
+class LLMConfig:
+    endpoint: str = "http://localhost:8080/completion"
+    model_name: str = "LFM2-350M"
+    temperature: float = 0.7
+    max_tokens: int = 512
+    top_p: float = 0.9
+    top_k: int = 40
+    repeat_penalty: float = 1.1
+    timeout_seconds: int = 30
+    system_prompt: str = "Tu es Heisenberg, un assistant vocal intelligent et serviable. Réponds de manière concise et naturelle."
+    max_history_turns: int = 5  # Number of conversation turns to keep in context
+
+@dataclass
 class Config:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
     wakeword: WakewordConfig = field(default_factory=WakewordConfig)
     stt: STTConfig = field(default_factory=STTConfig)
     vad: VADConfig = field(default_factory=VADConfig)
+    llm: LLMConfig = field(default_factory=LLMConfig)
     
     @classmethod
     def load(cls) -> "Config":
