@@ -16,7 +16,7 @@ class AudioConfig:
 @dataclass
 class WakewordConfig:
     models: list[str] = field(default_factory=lambda: ["hey_jarvis"])
-    threshold: float = 0.3
+    threshold: float = 0.1
     inference_framework: str = "onnxrt"
 
 @dataclass

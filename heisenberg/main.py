@@ -86,6 +86,10 @@ async def main():
         try:
             # Transition to THINKING state
             await fsm.handle_event(Event.TRANSCRIPTION_FINAL)
+
+            # Stop audio capture to prevent queue overflow during blocking LLM generation
+            # This matches the user's suggestion to "stop listening while thinking"
+            await audio_source.stop()
             
             # Get conversation history from session manager
             history = fsm.session_manager.get_conversation_history(
@@ -120,6 +124,10 @@ async def main():
             # TODO: Once TTS is implemented, wait for TTS_COMPLETE event
             # For now, simulate a brief pause and return to IDLE
             await asyncio.sleep(0.5)
+            
+            # Restart audio capture before going back to IDLE
+            await audio_source.start()
+            
             await fsm.transition(State.IDLE)
             logger.info("System returned to IDLE state. Ready for next command.")
             
@@ -162,7 +170,7 @@ async def main():
                     await wakeword_engine.feed_audio(frame)
                 
                 # Feed STT and VAD if LISTENING
-                if fsm.state == State.LISTENING:
+                elif fsm.state == State.LISTENING:
                     await stt_engine.feed_audio(frame)
                     
                     if vad_engine:
@@ -174,6 +182,11 @@ async def main():
                             await stt_engine.stop_stream()
                         
                         was_speaking = is_currently_speaking
+                
+                # In other states (THINKING, SPEAKING), we still consume the frame
+                # but do nothing with it to prevent queue overflow.
+                else:
+                    pass
             else:
                 await asyncio.sleep(0.01)
     except Exception as e:

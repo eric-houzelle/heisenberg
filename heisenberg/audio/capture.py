@@ -43,7 +43,8 @@ class PyAudioIO(ABCAudioIO):
                 logger.error(f"Failed to initialize RNNoise: {e}")
         
         # Async queue for buffered frames (ready for consumption at 16kHz)
-        self._queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=100)
+        # Increased to avoid QueueFull during heavy processing (LLM/STT)
+        self._queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=4096)
 
     def _audio_callback(self, in_data, frame_count, time_info, status):
         """Callback from PyAudio thread when data is ready."""
