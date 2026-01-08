@@ -65,47 +65,57 @@ class PyAudioIO(ABCAudioIO):
     def _process_frame_pipeline(self, data: bytes, frame_count: int) -> bytes:
         """
         The Audio Processing Pipeline:
-        1. Parse to int16
-        2. Clean with RNNoise (if in 48kHz)
-        3. Resample to 16kHz
-        4. Normalize (RMS)
+        1. Decode to int16
+        2. Resample to 48kHz (required for RNNoise)
+        3. Clean with RNNoise
+        4. Resample to 16kHz (required for Wakeword/STT)
         """
         audio_int16 = np.frombuffer(data, dtype=np.int16)
         if len(audio_int16) == 0:
             return b""
 
-        # 1. RNNoise Denoising (Only if at 48kHz and enabled)
-        # RNNoise operates on 10ms (480 samples) chunks.
-        if self._denoiser and self.actual_rate == 48000:
-            # If PyAudio gives us more or less than 480, we iterate
-            # (Heuristic: usually frame_count is 480)
-            cleaned_audio = []
-            for i in range(0, len(audio_int16), 480):
-                chunk = audio_int16[i:i+480]
-                if len(chunk) == 480:
-                    cleaned_audio.append(self._denoiser.denoise_frame(chunk.tobytes()))
-                else:
-                    # Trailing chunk too small for RNNoise
-                    cleaned_audio.append(chunk.tobytes())
-            audio_int16 = np.frombuffer(b"".join(cleaned_audio), dtype=np.int16)
-
-        # 2. Resampling to 16kHz
-        if self.actual_rate != self.process_rate:
-            target_len = int(len(audio_int16) * (self.process_rate / self.actual_rate))
+        # --- Stage 1: Ensure 48kHz for RNNoise ---
+        if self.actual_rate != 48000:
+            # Upsample/Downsample to 48k
+            target_len = int(len(audio_int16) * (48000 / self.actual_rate))
             if target_len > 0:
-                audio_int16 = np.interp(
+                audio_48k = np.interp(
                     np.linspace(0, len(audio_int16), target_len, endpoint=False),
                     np.arange(len(audio_int16)),
                     audio_int16
                 ).astype(np.int16)
             else:
                 return b""
+        else:
+            audio_48k = audio_int16
 
-        # 3. No Normalization - return raw audio
-        # OpenWakeWord and other models perform better with raw dynamics.
-        
-        # Convert back to bytes at 16kHz
-        return audio_int16.tobytes()
+        # --- Stage 2: RNNoise Denoising ---
+        # RNNoise operates on 10ms (480 samples @ 48kHz) chunks.
+        if self._denoiser:
+            cleaned_chunks = []
+            # logical chunks of 480
+            for i in range(0, len(audio_48k), 480):
+                chunk = audio_48k[i:i+480]
+                if len(chunk) == 480:
+                    cleaned_chunks.append(self._denoiser.denoise_frame(chunk.tobytes()))
+                else:
+                    # Keep partial chunk without denoising (too small)
+                    cleaned_chunks.append(chunk.tobytes())
+            audio_48k = np.frombuffer(b"".join(cleaned_chunks), dtype=np.int16)
+
+        # --- Stage 3: Resample to 16kHz for System ---
+        # We always want 16kHz output
+        target_len_16k = int(len(audio_48k) * (16000 / 48000))
+        if target_len_16k > 0:
+            audio_16k = np.interp(
+                np.linspace(0, len(audio_48k), target_len_16k, endpoint=False),
+                np.arange(len(audio_48k)),
+                audio_48k
+            ).astype(np.int16)
+        else:
+            return b""
+
+        return audio_16k.tobytes()
 
     async def start(self) -> None:
         if self.stream:
