@@ -26,7 +26,7 @@ class STTConfig:
     n_threads: int = 4
     sampling_strategy: int = 1 # 0: GREEDY, 1: BEAM_SEARCH
     initial_prompt: str = "Bonjour, je suis ton assistant Heisenberg."
-    debug_dump: bool = True # Enable dumping audio to WAV for quality check
+    debug_dump: bool = False 
 
 @dataclass
 class VADConfig:

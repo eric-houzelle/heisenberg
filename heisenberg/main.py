@@ -121,11 +121,20 @@ async def main():
             # Store conversation turn in session
             fsm.session_manager.add_conversation_turn(current_user_query, llm_response)
             
-            # TODO: Once TTS is implemented, wait for TTS_COMPLETE event
-            # For now, simulate a brief pause and return to IDLE
-            await asyncio.sleep(0.5)
+            # Transition to SPEAKING state (Simulated)
+            await fsm.handle_event(Event.TTS_START)
             
-            # Restart audio capture before going back to IDLE
+            # Simulate TTS duration based on response length (e.g., 0.05s per char)
+            tts_duration = len(llm_response) * 0.05
+            logger.info(f"Simulating TTS playback for {tts_duration:.2f}s...")
+            await asyncio.sleep(tts_duration)
+            
+            # Send TTS_COMPLETE event
+            await fsm.handle_event(Event.TTS_COMPLETE)
+            
+            # Restart audio capture ONLY after we are done speaking
+            # This prevents the mic from picking up the TTS output (Echo Cancellation via brute force)
+            logger.info("TTS complete. Re-opening ear (starting audio capture).")
             await audio_source.start()
             
             await fsm.transition(State.IDLE)
